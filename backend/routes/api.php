@@ -1,8 +1,14 @@
 <?php
 
-use Illuminate\Http\Request;
+use App\Http\Controllers\Auth\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
-    return $request->user();
+require __DIR__ . '/auth.php';
+
+Route::middleware(['auth:sanctum'])->group(function () {
+  Route::get('/user', [UserController::class, 'show']);
+});
+
+Route::get('/health', function () {
+  return response()->json(['status' => 'ok', 'service' => 'OwambePay API']);
 });
