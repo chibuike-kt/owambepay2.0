@@ -16,22 +16,31 @@ class SprayService
   public function __construct(private WalletService $walletService) {}
 
   /**
-   * Create a guest wallet + spray session when guest joins.
-   * Guest wallet is funded immediately with the amount they choose.
+   * Create guest wallet + session after a verified DevWallet payment.
+   * Reference used for idempotency — safe to call twice.
    */
-  public function joinEvent(
-    Event $event,
+  public function joinEventWithPayment(
+    Event  $event,
     string $guestName,
-    float $fundAmount
+    float  $grossAmount,
+    string $reference,
   ): array {
     if (!$event->isActive()) {
       throw new \Exception('This event has ended.');
     }
 
-    return DB::transaction(function () use ($event, $guestName, $fundAmount) {
+    // Idempotency — return existing session if reference already used
+    $existingSession = SpraySession::where('metadata->payment_reference', $reference)->first();
+    if ($existingSession) {
+      $guestWallet = Wallet::find($existingSession->metadata['guest_wallet_id']);
+      return ['session' => $existingSession, 'guest_wallet' => $guestWallet];
+    }
+
+    return DB::transaction(function () use ($event, $guestName, $grossAmount, $reference) {
       // Create ephemeral guest wallet
       $guestWallet = Wallet::create([
-        'user_id'           => $event->host_user_id, // owned by host for simplicity
+        'user_id'           => $event->host_user_id,
+        'type'              => 'guest',
         'currency'          => 'NGN',
         'balance'           => 0,
         'available_balance' => 0,
@@ -43,27 +52,30 @@ class SprayService
         ],
       ]);
 
-      // Fund the guest wallet (2% fee applies)
-      $this->walletService->fundWallet(
+      // Credit wallet after verified payment (2% fee deducted)
+      $this->walletService->creditFromVerifiedPayment(
         wallet: $guestWallet,
-        grossAmount: $fundAmount,
+        grossAmount: $grossAmount,
+        reference: 'GST-' . $reference,
         provider: 'devwallet',
       );
 
+      $guestWallet->refresh();
+
       // Create spray session
       $session = SpraySession::create([
-        'event_id'    => $event->id,
-        'guest_name'  => $guestName,
+        'event_id'   => $event->id,
+        'guest_name' => $guestName,
         'guest_token' => Str::uuid(),
-        'currency'    => 'NGN',
-        'status'      => 'active',
-        'metadata'    => ['guest_wallet_id' => $guestWallet->id],
+        'currency'   => 'NGN',
+        'status'     => 'active',
+        'metadata'   => [
+          'guest_wallet_id'    => $guestWallet->id,
+          'payment_reference'  => $reference,
+        ],
       ]);
 
-      return [
-        'session'      => $session,
-        'guest_wallet' => $guestWallet,
-      ];
+      return ['session' => $session, 'guest_wallet' => $guestWallet];
     });
   }
 
