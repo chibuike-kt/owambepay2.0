@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\UserController;
 use App\Http\Controllers\EventController;
+use App\Http\Controllers\SprayController;
 use App\Http\Controllers\WalletController;
 use Illuminate\Support\Facades\Route;
 
@@ -10,14 +11,12 @@ require __DIR__ . '/auth.php';
 Route::middleware(['auth:sanctum'])->group(function () {
   Route::get('/user', [UserController::class, 'show']);
 
-  // Wallet routes
   Route::prefix('wallets')->group(function () {
     Route::get('/',       [WalletController::class, 'index']);
     Route::post('/fund',  [WalletController::class, 'fund']);
     Route::get('/ledger', [WalletController::class, 'ledger']);
   });
 
-  // Event routes (authenticated)
   Route::prefix('events')->group(function () {
     Route::get('/',            [EventController::class, 'index']);
     Route::post('/',           [EventController::class, 'store']);
@@ -25,8 +24,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
   });
 });
 
-// Public event route — no auth, guests use this
-Route::get('/events/{slug}', [EventController::class, 'show']);
+// Public routes — no auth
+Route::get('/events/{slug}',         [EventController::class, 'show']);
+Route::post('/events/{slug}/join',   [SprayController::class, 'join']);
+Route::post('/events/{slug}/spray',  [SprayController::class, 'spray']);
+Route::get('/events/{slug}/sprays',  [SprayController::class, 'index']);
 
 Route::get('/health', function () {
   return response()->json(['status' => 'ok', 'service' => 'OwambePay API']);
